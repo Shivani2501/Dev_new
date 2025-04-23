@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: training-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: training-service
+  template:
+    metadata:
+      labels:
+        app: training-service
+    spec:
+      containers:
+        - name: training-service
+          image: training-service:latest
+          env:
+            - name: EPISODES
+              value: "1000"
+            - name: BATCH_SIZE
+              value: "64"
+            - name: LEARNING_RATE
+              value: "0.001"
+            - name: DISCOUNT_FACTOR
+              value: "0.99"
+            - name: EPSILON_START
+              value: "1.0"
+            - name: EPSILON_END
+              value: "0.01"
+            - name: EPSILON_DECAY
+              value: "0.995"
+            - name: MLFLOW_TRACKING_URI
+              value: "http://monitoring-service:5001"
+          volumeMounts:
+            - mountPath: /app/models
+              name: shared-volume
+            - mountPath: /app/logs
+              name: shared-volume
+      volumes:
+        - name: shared-volume
+          emptyDir: {}
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-service
+  template:
+    metadata:
+      labels:
+        app: api-service
+    spec:
+      containers:
+        - name: api-service
+          image: api-service:latest
+          env:
+            - name: MODEL_PATH
+              value: "/app/models/best_model.pth"
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - mountPath: /app/models
+              name: shared-volume
+      volumes:
+        - name: shared-volume
+          emptyDir: {}
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monitoring-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: monitoring-service
+  template:
+    metadata:
+      labels:
+        app: monitoring-service
+    spec:
+      containers:
+        - name: monitoring-service
+          image: monitoring-service:latest
+          env:
+            - name: MLFLOW_TRACKING_URI
+              value: "http://0.0.0.0:5001"
+          ports:
+            - containerPort: 5000
+            - containerPort: 5001
+          volumeMounts:
+            - mountPath: /app/logs
+              name: shared-volume
+            - mountPath: /app/mlflow
+              name: shared-volume
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: shared-volume
+          emptyDir: {}
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: visualization-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: visualization-service
+  template:
+    metadata:
+      labels:
+        app: visualization-service
+    spec:
+      containers:
+        - name: visualization-service
+          image: visualization-service:latest
+          env:
+            - name: LOG_PATH
+              value: "/app/logs"
+          ports:
+            - containerPort: 8501
+          volumeMounts:
+            - mountPath: /app/logs
+              name: shared-volume
+            - mountPath: /app/models
+              name: shared-volume
+      volumes:
+        - name: shared-volume
+          emptyDir: {}
